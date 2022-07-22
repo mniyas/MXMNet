@@ -1,7 +1,8 @@
 import math
 import torch
 import torch.nn as nn
-from torch_geometric.nn import global_add_pool, radius
+import torch.nn.functional as F
+from torch_geometric.nn import global_add_pool, radius, Set2Set
 from torch_geometric.utils import remove_self_loops
 from torch_sparse import SparseTensor
 from torch_scatter import scatter
@@ -42,7 +43,10 @@ class MXMNet(nn.Module):
         self.local_layers = torch.nn.ModuleList()
         for layer in range(config.n_layer):
             self.local_layers.append(Local_MP(config))
-        
+
+        self.set2set = Set2Set(self.dim, processing_steps=3)
+        self.lin1 = torch.nn.Linear(2 * self.dim, self.dim)
+        self.lin2 = torch.nn.Linear(self.dim, 1)
         self.init()
 
     def init(self):
@@ -138,5 +142,8 @@ class MXMNet(nn.Module):
             node_sum += t
         
         # Readout
-        output = global_add_pool(node_sum, batch)
+        # output = global_add_pool(node_sum, batch)
+        output = self.set2set(h, data.batch)
+        output = F.sigmoid(self.lin1(output))
+        output = self.lin2(output)
         return output.view(-1)
